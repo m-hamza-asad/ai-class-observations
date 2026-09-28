@@ -32,3 +32,25 @@
 - **Email links use `token_hash` + server-side verification.** Tested: a link requested in one browser redeems from a completely separate client, so a teacher can request on a laptop and open on their phone.
 - **Report template v1** is seeded as data (`report_templates`): overview, per-rubric-category ratings (1–4 plus "not enough evidence") with timestamped evidence, plan alignment, language of instruction, strengths, recommendations, and evidence limitations.
 - **Known gap: scanned PDFs** (images, no text layer) are rejected with a clear message. OCR can be added later (e.g. Gemini) if schools' documents turn out to be scans.
+
+## 2026-09-28: Day 3 (fixed framework, report generation, live recording)
+
+**Correction from the school's documents:** the rubric is the school's fixed five-category framework, not derived per class.
+- Per-class rubric derivation was removed (the `rubrics` table was dropped). The framework is **report template v2** (`school-observation-framework`), global and versioned. Reports pin the template version they were scored with. Admins can see it at *Admin → Framework*.
+- Class documents (KPIs, TORs, learning outcomes) are **context** for the narrative. The teacher's lesson planner (attached per recording) drives the separate **lesson-plan alignment %**, using the school's own prompt verbatim.
+- **Scores are computed in code, not by the model.** Claude rates each criterion 1–4 or "not observed" with timestamped evidence. Category % = mean observed rating ÷ 4. Overall framework % = weighted mean of categories that have evidence. "Not observed" is excluded, never scored as 0, and listed in the report. The alignment % is the one number the model judges directly, because the school's prompt asks for it.
+- **Draft framing.** Because scores will feed hiring (<50% ineligible) and staff thresholds (70% meets standard), the report, the prompt and the UI all present output as an *AI draft for administrator review*. The prompt forbids pass/fail, eligibility or threshold language. No threshold is shown or applied anywhere in the app.
+- **Live chunked upload is the default** (confirmed). The recorder shows upload state at all times, with a prominent red banner when offline, and the pre-flight checklist explicitly tells teachers *not* to use Airplane Mode.
+
+**Pipeline** (all stages are pg-boss jobs mirrored in `processing_jobs`; the stage-uniqueness index makes triggers idempotent):
+upload → rolling transcription (60s slices with 2s overlap, Whisper large-v3, confidence from log-probs, Urdu/Devanagari script romanized by Claude, original kept) → normalization (H.264 720p, stored in Supabase Storage) → transcript assembly (failed slices become visible gaps; >20% failed fails the stage) → draft report (Claude, structured output, validated and normalized in code) → recording `ready`.
+- **Models:** `claude-sonnet-5` for the report (the brief specifies Sonnet) and, by default, for romanization. Both are configurable (`CLAUDE_REPORT_MODEL`, `CLAUDE_ROMANIZE_MODEL`).
+- **`AI_FAKE=1`** (local only, refused in production) replaces AI calls with labelled fake output, so the pipeline can be tested without keys.
+- Video analysis (Gemini) is not built yet. The report runs on the transcript and states the limitation.
+- `human_observer_reports` is added as a placeholder table only (no logic or UI).
+
+**Open questions for the school** (current defaults are in brackets and easy to change in the template):
+1. Rating scale and score conversion. [1–4 per criterion; % = mean ÷ 4, so "Developing" = 50% and "Proficient" = 75%]. The 50%/70% thresholds depend on this mapping.
+2. Which score the thresholds apply to: framework %, alignment %, or a combination? [kept separate; no combined score]
+3. Category weights. [equal]
+4. Exact definitions of *flipped learning*, *closed-book introduction* and *focused grid*. [working descriptors, marked "to confirm"]

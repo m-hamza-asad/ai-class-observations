@@ -9,14 +9,13 @@ export const metadata = { title: "Overview · Observe" };
 export default async function AdminOverview() {
   const { profile } = await requireRole("admin");
   const supabase = await createClient();
-  const [{ data: campus }, { count: teachers }, { count: classes }, { count: docs }, { count: recordings }, { data: terms }, { count: rubrics }] = await Promise.all([
+  const [{ data: campus }, { count: teachers }, { count: classes }, { count: docs }, { count: recordings }, { data: terms }] = await Promise.all([
     supabase.from("campuses").select("name").eq("id", profile.campus_id).maybeSingle(),
     supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "teacher").is("deactivated_at", null),
     supabase.from("classes").select("id", { count: "exact", head: true }).is("archived_at", null),
     supabase.from("documents").select("id", { count: "exact", head: true }).eq("parse_status", "complete").is("superseded_at", null),
     supabase.from("recordings").select("id", { count: "exact", head: true }),
     supabase.from("academic_terms").select("*"),
-    supabase.from("rubrics").select("id", { count: "exact", head: true }).eq("status", "ready"),
   ]);
   const term = currentTerm(terms ?? []);
 
@@ -25,7 +24,6 @@ export default async function AdminOverview() {
     { done: (teachers ?? 0) > 0, label: "Invite teachers", href: "/admin/teachers" },
     { done: (classes ?? 0) > 0, label: "Create classes and assign teachers", href: "/admin/classes" },
     { done: (docs ?? 0) > 0, label: "Upload KPIs / TORs / learning outcomes per class", href: "/admin/classes" },
-    { done: (rubrics ?? 0) > 0, label: "Derive each class's rubric", href: "/admin/classes" },
   ];
 
   const stats = [

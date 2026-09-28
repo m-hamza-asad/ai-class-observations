@@ -8,10 +8,15 @@ import { logger } from "./lib/logger.js";
 import { db } from "./lib/supabase.js";
 import { createJobRow } from "./jobs/tracking.js";
 import { handleDocumentParse, type DocumentParseData } from "./jobs/documentParse.js";
-
-export const QUEUES = {
-  documentParse: { name: "document-parse", retryLimit: 2, retryDelay: 10 },
-} as const;
+import {
+  handleAssembleTranscript,
+  handleGenerateReport,
+  handleNormalize,
+  handleTranscribeSlice,
+  type SliceJob,
+  type StageJob,
+} from "./jobs/pipeline.js";
+import { QUEUES, send, setBoss } from "./queue/boss.js";
 
 let boss: PgBoss | null = null;
 
@@ -19,13 +24,28 @@ export async function startQueue() {
   boss = new PgBoss({ connectionString: config.DATABASE_URL!, application_name: "observation-worker" });
   boss.on("error", (err: unknown) => logger.error({ stage: "queue", error: String(err) }, "pg-boss error"));
   await boss.start();
+  setBoss(boss);
 
   for (const q of Object.values(QUEUES)) {
     await boss.createQueue(q.name, { retryLimit: q.retryLimit, retryDelay: q.retryDelay, retryBackoff: true });
   }
 
-  await boss.work<DocumentParseData>(QUEUES.documentParse.name, { includeMetadata: true, batchSize: 1 }, async ([job]) => {
+  const one = { includeMetadata: true, batchSize: 1 } as const;
+  await boss.work<DocumentParseData>(QUEUES.documentParse.name, one, async ([job]) => {
     await handleDocumentParse(job.data, job.retryCount, QUEUES.documentParse.retryLimit);
+  });
+  // slices run a few at a time so a backlog after a connectivity drop clears quickly
+  await boss.work<SliceJob>(QUEUES.transcribeSlice.name, { includeMetadata: true, batchSize: 1, localConcurrency: 4 }, async ([job]) => {
+    await handleTranscribeSlice(job.data, job.retryCount, QUEUES.transcribeSlice.retryLimit);
+  });
+  await boss.work<StageJob>(QUEUES.normalize.name, one, async ([job]) => {
+    await handleNormalize(job.data, job.retryCount, QUEUES.normalize.retryLimit);
+  });
+  await boss.work<{ recordingId: string }>(QUEUES.assembleTranscript.name, one, async ([job]) => {
+    await handleAssembleTranscript(job.data, job.retryCount, QUEUES.assembleTranscript.retryLimit);
+  });
+  await boss.work<StageJob>(QUEUES.generateReport.name, { includeMetadata: true, batchSize: 1, localConcurrency: 2 }, async ([job]) => {
+    await handleGenerateReport(job.data, job.retryCount, QUEUES.generateReport.retryLimit);
   });
 
   await reconcilePendingDocuments();
@@ -37,7 +57,6 @@ export async function stopQueue() {
 }
 
 export async function enqueueDocumentParse(documentId: string, classId: string) {
-  if (!boss) throw new Error("queue not started");
   // skip if a parse for this document is already queued or running
   const { data: active } = await db()
     .from("processing_jobs")
@@ -48,9 +67,8 @@ export async function enqueueDocumentParse(documentId: string, classId: string) 
     .limit(1);
   if (active?.length) return active[0].id;
 
-  const q = QUEUES.documentParse;
-  const jobRowId = await createJobRow({ stage: "document_parse", documentId, classId }, q.retryLimit + 1);
-  await boss.send(q.name, { jobRowId, documentId } satisfies DocumentParseData);
+  const jobRowId = await createJobRow({ stage: "document_parse", documentId, classId }, QUEUES.documentParse.retryLimit + 1);
+  await send("documentParse", { jobRowId, documentId } satisfies DocumentParseData);
   logger.info({ stage: "document_parse", documentId, classId, jobId: jobRowId }, "enqueued");
   return jobRowId;
 }

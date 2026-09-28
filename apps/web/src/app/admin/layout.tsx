@@ -3,9 +3,11 @@ import { requireRole } from "@/lib/auth";
 
 const NAV = [
   { href: "/admin", label: "Overview" },
+  { href: "/admin/recordings", label: "Recordings" },
   { href: "/admin/classes", label: "Classes" },
   { href: "/admin/teachers", label: "People" },
   { href: "/admin/terms", label: "Terms" },
+  { href: "/admin/framework", label: "Framework" },
 ];
 
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {

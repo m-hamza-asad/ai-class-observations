@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+**/.next
+**/dist
+apps/worker/data
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+supabase/.temp
+supabase/.branches
+.claude

@@ -180,6 +180,38 @@ export type Database = {
           },
         ];
       };
+      human_observer_reports: {
+        Row: {
+          content: Json | null;
+          id: string;
+          observer_role: string | null;
+          recording_id: string;
+          uploaded_at: string;
+        };
+        Insert: {
+          content?: Json | null;
+          id?: string;
+          observer_role?: string | null;
+          recording_id: string;
+          uploaded_at?: string;
+        };
+        Update: {
+          content?: Json | null;
+          id?: string;
+          observer_role?: string | null;
+          recording_id?: string;
+          uploaded_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "human_observer_reports_recording_id_fkey";
+            columns: ["recording_id"];
+            isOneToOne: false;
+            referencedRelation: "recordings";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       model_runs: {
         Row: {
           class_id: string | null;
@@ -363,13 +395,16 @@ export type Database = {
       };
       recordings: {
         Row: {
+          bytes_received: number;
           campus_id: string;
+          chunks_received: number;
           class_id: string;
           created_at: string;
           duration_sec: number | null;
           ended_at: string | null;
           error_detail: string | null;
           id: string;
+          last_chunk_at: string | null;
           mime_type: string | null;
           original_path: string | null;
           possible_duplicate_of: string | null;
@@ -385,13 +420,16 @@ export type Database = {
           video_path: string | null;
         };
         Insert: {
+          bytes_received?: number;
           campus_id: string;
+          chunks_received?: number;
           class_id: string;
           created_at?: string;
           duration_sec?: number | null;
           ended_at?: string | null;
           error_detail?: string | null;
           id?: string;
+          last_chunk_at?: string | null;
           mime_type?: string | null;
           original_path?: string | null;
           possible_duplicate_of?: string | null;
@@ -407,13 +445,16 @@ export type Database = {
           video_path?: string | null;
         };
         Update: {
+          bytes_received?: number;
           campus_id?: string;
+          chunks_received?: number;
           class_id?: string;
           created_at?: string;
           duration_sec?: number | null;
           ended_at?: string | null;
           error_detail?: string | null;
           id?: string;
+          last_chunk_at?: string | null;
           mime_type?: string | null;
           original_path?: string | null;
           possible_duplicate_of?: string | null;
@@ -550,7 +591,7 @@ export type Database = {
           id: string;
           model_run_id: string | null;
           recording_id: string;
-          rubric_id: string | null;
+          scores: Json | null;
           sections: NonNullable<Json>;
           status: Database["public"]["Enums"]["report_status"];
           template_id: string | null;
@@ -564,7 +605,7 @@ export type Database = {
           id?: string;
           model_run_id?: string | null;
           recording_id: string;
-          rubric_id?: string | null;
+          scores?: Json | null;
           sections?: NonNullable<Json>;
           status?: Database["public"]["Enums"]["report_status"];
           template_id?: string | null;
@@ -578,7 +619,7 @@ export type Database = {
           id?: string;
           model_run_id?: string | null;
           recording_id?: string;
-          rubric_id?: string | null;
+          scores?: Json | null;
           sections?: NonNullable<Json>;
           status?: Database["public"]["Enums"]["report_status"];
           template_id?: string | null;
@@ -607,13 +648,6 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
-            foreignKeyName: "reports_rubric_id_fkey";
-            columns: ["rubric_id"];
-            isOneToOne: false;
-            referencedRelation: "rubrics";
-            referencedColumns: ["id"];
-          },
-          {
             foreignKeyName: "reports_template_id_fkey";
             columns: ["template_id"];
             isOneToOne: false;
@@ -622,53 +656,58 @@ export type Database = {
           },
         ];
       };
-      rubrics: {
+      transcription_slices: {
         Row: {
-          class_id: string;
+          attempt_count: number;
           created_at: string;
-          derived_from_document_ids: string[];
+          duration_sec: number | null;
           error_detail: string | null;
           id: string;
-          model_run_id: string | null;
-          status: Database["public"]["Enums"]["rubric_status"];
-          structured_criteria: Json | null;
-          version: number;
+          language: string | null;
+          model_run_ids: string[];
+          recording_id: string;
+          segments: Json | null;
+          slice_index: number;
+          start_sec: number;
+          status: Database["public"]["Enums"]["job_status"];
+          updated_at: string;
         };
         Insert: {
-          class_id: string;
+          attempt_count?: number;
           created_at?: string;
-          derived_from_document_ids?: string[];
+          duration_sec?: number | null;
           error_detail?: string | null;
           id?: string;
-          model_run_id?: string | null;
-          status?: Database["public"]["Enums"]["rubric_status"];
-          structured_criteria?: Json | null;
-          version: number;
+          language?: string | null;
+          model_run_ids?: string[];
+          recording_id: string;
+          segments?: Json | null;
+          slice_index: number;
+          start_sec: number;
+          status?: Database["public"]["Enums"]["job_status"];
+          updated_at?: string;
         };
         Update: {
-          class_id?: string;
+          attempt_count?: number;
           created_at?: string;
-          derived_from_document_ids?: string[];
+          duration_sec?: number | null;
           error_detail?: string | null;
           id?: string;
-          model_run_id?: string | null;
-          status?: Database["public"]["Enums"]["rubric_status"];
-          structured_criteria?: Json | null;
-          version?: number;
+          language?: string | null;
+          model_run_ids?: string[];
+          recording_id?: string;
+          segments?: Json | null;
+          slice_index?: number;
+          start_sec?: number;
+          status?: Database["public"]["Enums"]["job_status"];
+          updated_at?: string;
         };
         Relationships: [
           {
-            foreignKeyName: "rubrics_class_id_fkey";
-            columns: ["class_id"];
+            foreignKeyName: "transcription_slices_recording_id_fkey";
+            columns: ["recording_id"];
             isOneToOne: false;
-            referencedRelation: "classes";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "rubrics_model_run_id_fkey";
-            columns: ["model_run_id"];
-            isOneToOne: false;
-            referencedRelation: "model_runs";
+            referencedRelation: "recordings";
             referencedColumns: ["id"];
           },
         ];
@@ -787,7 +826,6 @@ export type Database = {
       recording_source: "in_app" | "upload";
       recording_status: "recording" | "uploading" | "processing" | "ready" | "failed";
       report_status: "draft" | "final";
-      rubric_status: "pending" | "ready" | "failed";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -920,7 +958,6 @@ export const Constants = {
       recording_source: ["in_app", "upload"],
       recording_status: ["recording", "uploading", "processing", "ready", "failed"],
       report_status: ["draft", "final"],
-      rubric_status: ["pending", "ready", "failed"],
     },
   },
 } as const;

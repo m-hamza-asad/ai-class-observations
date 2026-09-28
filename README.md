@@ -20,3 +20,8 @@ docs/         decisions log, recording test protocol
 - **Day 2:** Supabase schema + access rules, magic-link auth with admin/teacher roles, admin setup (people, classes,
   documents with PDF/DOCX text extraction, terms), job queue with retries and failure reporting. Verified locally
   end to end, including `npm run check-rls` (20 access checks).
+- **Day 3:** the school's fixed five-category framework (template v2) plus a separate lesson-plan alignment %. Teacher
+  recording screen with live chunked upload and always-visible upload/offline state. Worker pipeline: rolling Whisper
+  transcription with romanization and unclear flags, normalization to Storage, and a Claude draft report with
+  scores computed in code. Admin recordings list and review view (video, transcript, draft, clickable timestamps).
+  Verified end to end locally with `AI_FAKE=1`; **real AI calls need the Groq and Anthropic keys.**

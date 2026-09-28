@@ -99,7 +99,7 @@ export default function RecorderLab() {
   const [settings, setSettings] = useState<Settings>({
     mimeType: env.supportedMimeTypes[0] ?? "",
     timesliceSec: 10,
-    videoKbps: 1500,
+    videoKbps: 1000,
     height: 720,
     facing: "environment",
     voiceProcessing: false,
@@ -563,6 +563,8 @@ export default function RecorderLab() {
         <p className="text-neutral-500">Validates in-browser recording on this device. Keep the screen on while recording.</p>
       </header>
 
+      {!target.token && <TestCodeCard />}
+
       {env && (
         <section className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
           <h2 className="mb-1 font-medium">This device</h2>
@@ -743,6 +745,37 @@ function ServerPanel({ server }: { server: ServerView }) {
           Rolling audio slices: {slices.map((s) => `${Math.round(s.fromSec)}s+${s.durationSec ? Math.round(s.durationSec) : "?"}${s.ok ? "" : "✗"}`).join(" · ")}
         </p>
       )}
+    </section>
+  );
+}
+
+/**
+ * Home-screen apps on iPhone don't share Safari's storage, so the test code from the link is lost
+ * when the page is opened from the icon. Paste the test link (or just the code) once here.
+ */
+function TestCodeCard() {
+  const [value, setValue] = useState("");
+  const save = () => {
+    const v = value.trim();
+    let token = v;
+    try {
+      token = new URL(v).searchParams.get("token") ?? v;
+    } catch {
+      // not a URL: treat as the bare code
+    }
+    try {
+      localStorage.setItem("lab.token", token);
+    } catch {}
+    location.reload();
+  };
+  return (
+    <section className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+      <h2 className="font-medium">Test code needed</h2>
+      <p className="text-xs">Paste the full test link you were sent (or just the code after <code>token=</code>). Uploads are rejected without it.</p>
+      <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="https://…/lab/recorder?token=…" className="w-full rounded border px-2 py-1.5 text-sm text-black" />
+      <Btn onClick={save} disabled={!value.trim()} className="bg-neutral-900 text-white">
+        Save
+      </Btn>
     </section>
   );
 }

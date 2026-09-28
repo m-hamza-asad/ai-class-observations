@@ -11,10 +11,12 @@
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@fastify/cors": "^11.3.0",
     "@obs/shared": "*",
     "@supabase/supabase-js": "^2.117.2",
     "fastify": "^5.12.5",
+    "groq-sdk": "^1.6.0",
     "mammoth": "^1.13.0",
     "pg-boss": "^12.35.0",
     "pino": "^10.3.1",

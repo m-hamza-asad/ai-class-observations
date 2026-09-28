@@ -91,6 +91,18 @@ rate-limited, so teacher invites **will not arrive** without a custom SMTP sende
 
 All AI keys stay on the worker. The browser only ever holds the Supabase public key and the user's session.
 
+## Worker AI settings
+| Variable | Default | Notes |
+|---|---|---|
+| `GROQ_API_KEY` | (none) | Whisper large-v3 transcription |
+| `ANTHROPIC_API_KEY` | (none) | Romanization + draft report |
+| `CLAUDE_REPORT_MODEL` / `CLAUDE_ROMANIZE_MODEL` | `claude-sonnet-5` | Change without a code change |
+| `GEMINI_API_KEY` | (none) | Video analysis (next build step) |
+| `UNCLEAR_CONFIDENCE_THRESHOLD` | `0.45` | Transcript lines below this are flagged "unclear"; tune on real lessons |
+| `AI_FAKE` | `0` | `1` = fake AI output for **local** pipeline testing; refused when `NODE_ENV=production` |
+
+Missing keys don't crash anything: the affected stage fails with a clear "not configured" message on the recording page.
+
 ## Local development
 Needs Docker Desktop running (for the local Supabase stack).
 ```bash

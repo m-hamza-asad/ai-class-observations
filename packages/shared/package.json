@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./database": "./src/database.types.ts"
+    "./database": "./src/database.types.ts",
+    "./framework": "./src/framework.ts"
   },
   "scripts": {
     "gen:types": "supabase gen types typescript --local --schema public > src/database.types.ts && npx --yes oxfmt src/database.types.ts",

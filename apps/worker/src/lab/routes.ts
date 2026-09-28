@@ -7,7 +7,8 @@
  *   - on finalize we probe, decode and normalize the full file and time each step
  */
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createWriteStream } from "node:fs";
+import os from "node:os";
 import { appendFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -119,6 +120,8 @@ async function appendContiguous(m: LabMeta, log: FastifyInstance["log"]) {
     const seq = m.appendedUpTo + 1;
     const buf = await readFile(chunkPath(m.id, seq));
     await appendFile(streamPath(m), buf);
+    // the stream file now holds these bytes; keeping the chunk too would double disk use
+    await rm(chunkPath(m.id, seq), { force: true });
     m.appendedUpTo = seq;
     m.appendedBytes += buf.length;
     // slice on media time (chunk capture offset), not chunk count: browsers emit chunks at uneven rates
@@ -138,6 +141,7 @@ async function cutAudioSlice(m: LabMeta, log: FastifyInstance["log"]) {
   if (r.code === 0) {
     const p = await probe(out);
     slice.durationSec = p.durationSec;
+    await rm(out, { force: true }); // the lab only needs to know the slice was decodable
     if (p.durationSec) m.audioCursorSec += p.durationSec;
     else slice.ok = false;
   } else {
@@ -157,11 +161,13 @@ async function analyze(id: string, log: FastifyInstance["log"]) {
     const src = streamPath(m);
     a.sourceProbe = await probe(src);
     a.decodedAudioSec = await decodedDurationSec(src, "a");
-    const out = path.join(dirOf(id), "normalized.mp4");
+    // container temp disk, not the (small) persistent volume
+    const out = path.join(os.tmpdir(), `lab-${id}.mp4`);
     const n = await normalize(src, out);
     if (n.code !== 0) throw new Error(`normalize failed: ${n.stderr.trim().slice(-1500)}`);
     a.normalizeMs = n.ms;
     a.normalizedProbe = await probe(out);
+    await rm(out, { force: true });
     const dur = a.normalizedProbe.durationSec ?? a.decodedAudioSec;
     if (dur) a.normalizeRealtimeFactor = Number((n.ms / 1000 / dur).toFixed(3));
     a.status = "done";
@@ -202,11 +208,7 @@ export async function labRoutes(app: FastifyInstance) {
   await mkdir(DATA_DIR, { recursive: true });
   setInterval(() => void cleanupOld(app.log), 3600_000).unref();
 
-  // Raw binary bodies are handed to the route as a stream; we enforce our own size cap.
-  const passthrough = (_req: FastifyRequest, payload: Readable, done: (err: Error | null, body?: unknown) => void) => done(null, payload);
-  app.addContentTypeParser("application/octet-stream", passthrough);
-  app.addContentTypeParser(/^(video|audio)\//, passthrough);
-
+  // raw binary bodies arrive as streams via the app-wide content-type parser (index.ts)
   app.addHook("onRequest", async (req, reply) => {
     if (req.method !== "OPTIONS" && !checkToken(req)) return reply.code(401).send({ error: "bad lab token" });
   });
@@ -257,6 +259,8 @@ export async function labRoutes(app: FastifyInstance) {
     return withLock(id, async () => {
       const m = (await loadMeta(id))!;
       const duplicate = Boolean(m.received[String(seq)]);
+      // a retried chunk that was already appended: drop the new copy
+      if (duplicate && seq <= m.appendedUpTo) await rm(chunkPath(id, seq), { force: true });
       const tMs = Number(req.headers["x-chunk-t"]);
       if (!duplicate) m.received[String(seq)] = { bytes, at: new Date().toISOString(), tMs: Number.isFinite(tMs) ? tMs : undefined };
       await appendContiguous(m, req.log);
@@ -365,10 +369,4 @@ export async function labRoutes(app: FastifyInstance) {
       }));
   });
 
-  app.get<{ Params: { id: string } }>("/sessions/:id/normalized", async (req, reply) => {
-    const file = path.join(dirOf(req.params.id), "normalized.mp4");
-    if (!ID_RE.test(req.params.id) || !(await stat(file).catch(() => null))) return reply.code(404).send({ error: "not ready" });
-    reply.header("content-type", "video/mp4");
-    return reply.send(createReadStream(file));
-  });
 }

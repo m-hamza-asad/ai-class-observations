@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { DOCUMENT_TYPES, RUBRIC_SOURCE_TYPES } from "@obs/shared";
+import { DOCUMENT_TYPES } from "@obs/shared";
 import AutoRefresh from "@/components/AutoRefresh";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { fmtBytes, fmtDateTime } from "@/lib/format";
@@ -26,7 +26,7 @@ export async function generateMetadata({ params }: PageProps<"/admin/classes/[id
 export default async function ClassDetailPage({ params }: PageProps<"/admin/classes/[id]">) {
   const { id } = await params;
   const supabase = await createClient();
-  const [{ data: cls }, { data: teachers }, { data: docs }, { data: rubric }] = await Promise.all([
+  const [{ data: cls }, { data: teachers }, { data: docs }] = await Promise.all([
     supabase.from("classes").select("*").eq("id", id).maybeSingle(),
     supabase.from("profiles").select("id, full_name, email").eq("role", "teacher").is("deactivated_at", null).order("full_name"),
     supabase
@@ -36,13 +36,10 @@ export default async function ClassDetailPage({ params }: PageProps<"/admin/clas
       .eq("scope", "class")
       .is("superseded_at", null)
       .order("uploaded_at", { ascending: false }),
-    supabase.from("rubrics").select("id, version, status, created_at, derived_from_document_ids").eq("class_id", id).order("version", { ascending: false }).limit(1).maybeSingle(),
   ]);
   if (!cls) notFound();
 
   const inFlight = docs?.some((d) => d.parse_status === "pending" || d.parse_status === "processing") ?? false;
-  const readyRubricSources = docs?.filter((d) => d.parse_status === "complete" && RUBRIC_SOURCE_TYPES.includes(d.type)) ?? [];
-  const rubricStale = rubric ? readyRubricSources.some((d) => !rubric.derived_from_document_ids.includes(d.id)) || rubric.derived_from_document_ids.length !== readyRubricSources.length : false;
 
   return (
     <>
@@ -58,13 +55,13 @@ export default async function ClassDetailPage({ params }: PageProps<"/admin/clas
         <div className="space-y-6 lg:col-span-2">
           <Card title="Reference documents">
             <p className="mb-4 text-sm text-neutral-500">
-              KPIs, terms of reference and learning outcomes for this class. These are used to derive the class&apos;s observation rubric. Lesson planners are attached to each
-              recording instead.
+              KPIs, terms of reference and learning outcomes for this class. They give the AI context for the report narrative and the lesson-plan alignment score.
+              Each day&apos;s lesson planner is attached by the teacher to the recording itself.
             </p>
             <DocumentUploader classId={cls.id} />
             <div className="mt-5">
               {!docs?.length ? (
-                <EmptyState>No documents yet. Upload the teacher KPIs and TORs to get started.</EmptyState>
+                <EmptyState>No documents yet. Upload the teacher KPIs, TORs and learning outcomes.</EmptyState>
               ) : (
                 <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
                   {docs.map((d) => (
@@ -103,22 +100,14 @@ export default async function ClassDetailPage({ params }: PageProps<"/admin/clas
           <Card title="Details">
             <ClassForm teachers={teachers ?? []} initial={cls} compact />
           </Card>
-          <Card title="Observation rubric">
-            {rubric ? (
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <Badge tone={rubric.status === "ready" ? "green" : rubric.status === "failed" ? "red" : "blue"}>v{rubric.version} · {rubric.status}</Badge>
-                  <span className="text-neutral-500">{fmtDateTime(rubric.created_at)}</span>
-                </div>
-                {rubricStale && <p className="text-amber-700 dark:text-amber-400">Documents have changed since this rubric was derived.</p>}
-              </div>
-            ) : (
-              <p className="text-sm text-neutral-500">
-                {readyRubricSources.length
-                  ? `${readyRubricSources.length} document${readyRubricSources.length === 1 ? "" : "s"} ready. Rubric derivation is the next build step.`
-                  : "Upload KPIs / TORs first. The rubric is derived from them."}
-              </p>
-            )}
+          <Card title="How lessons are scored">
+            <p className="text-sm text-neutral-500">
+              Every lesson is scored against the school&apos;s fixed observation framework (the same for all classes), plus a separate lesson-plan alignment
+              percentage when the teacher attaches a planner.{" "}
+              <Link href="/admin/framework" className="text-blue-800 underline dark:text-blue-400">
+                View the framework
+              </Link>
+            </p>
           </Card>
         </div>
       </div>

@@ -1,9 +1,11 @@
+import type { Readable } from "node:stream";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { config, pipelineEnabled } from "./config.js";
+import { aiFake, config, pipelineEnabled } from "./config.js";
 import { logger } from "./lib/logger.js";
 import { labRoutes } from "./lab/routes.js";
 import { documentRoutes } from "./routes/documents.js";
+import { recordingRoutes } from "./routes/recordings.js";
 import { startQueue, stopQueue } from "./queue.js";
 import { FFMPEG, FFPROBE } from "./media/ffmpeg.js";
 
@@ -21,12 +23,24 @@ await app.register(cors, {
   methods: ["GET", "POST", "PUT", "OPTIONS"],
 });
 
-app.get("/health", async () => ({ ok: true, pipeline: pipelineEnabled, ffmpeg: FFMPEG, ffprobe: FFPROBE }));
+// Raw binary bodies (video chunks, uploads) are handed to routes as streams; routes enforce their own size caps.
+const passthrough = (_req: unknown, payload: Readable, done: (err: Error | null, body?: unknown) => void) => done(null, payload);
+app.addContentTypeParser("application/octet-stream", passthrough);
+app.addContentTypeParser(/^(video|audio)\//, passthrough);
+
+app.get("/health", async () => ({
+  ok: true,
+  pipeline: pipelineEnabled,
+  ai: aiFake ? "FAKE (local testing)" : { groq: Boolean(config.GROQ_API_KEY), anthropic: Boolean(config.ANTHROPIC_API_KEY), gemini: Boolean(config.GEMINI_API_KEY) },
+  ffmpeg: FFMPEG,
+  ffprobe: FFPROBE,
+}));
 await app.register(labRoutes, { prefix: "/lab" });
 
 if (pipelineEnabled) {
   await startQueue();
   await app.register(documentRoutes, { prefix: "/documents" });
+  await app.register(recordingRoutes, { prefix: "/recordings" });
 } else {
   logger.warn("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / DATABASE_URL not set: running lab-only (no pipeline)");
 }
