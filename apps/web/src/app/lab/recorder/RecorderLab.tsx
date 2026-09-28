@@ -40,6 +40,9 @@ interface ServerView {
     status: string;
     error?: string;
     normalizeMs?: number;
+    processMethod?: "remux" | "transcode";
+    fallbackReason?: string;
+    timingRepairs?: { track: string; atSec: number; badDurationSec: number }[];
     normalizeRealtimeFactor?: number;
     decodedAudioSec?: number;
     sourceProbe?: { formatName?: string; durationSec?: number; video?: { codec: string; width: number; height: number; rotation?: number }; audio?: { codec: string } };
@@ -485,6 +488,9 @@ export default function RecorderLab() {
             decodedAudioSec: server.analysis?.decodedAudioSec,
             normalizedSec: server.analysis?.normalizedProbe?.durationSec,
             normalizeRealtimeFactor: server.analysis?.normalizeRealtimeFactor,
+            processMethod: server.analysis?.processMethod,
+            fallbackReason: server.analysis?.fallbackReason,
+            timingRepairs: server.analysis?.timingRepairs,
             rollingAudioSlices: server.audioSlices?.map((a) => ({ from: Math.round(a.fromSec), dur: a.durationSec && Math.round(a.durationSec), ok: a.ok })),
           }
         : null,
@@ -737,7 +743,15 @@ function ServerPanel({ server }: { server: ServerView }) {
             {a.sourceProbe?.video?.rotation ? ` (rot ${a.sourceProbe.video.rotation})` : ""} · {a.sourceProbe?.audio?.codec}
           </li>
           <li>Decoded audio: {a.decodedAudioSec?.toFixed(1)}s · Normalized: {a.normalizedProbe?.durationSec?.toFixed(1)}s ({a.normalizedProbe?.sizeBytes ? fmtBytes(a.normalizedProbe.sizeBytes) : "?"})</li>
-          <li>Normalize took {((a.normalizeMs ?? 0) / 1000).toFixed(1)}s ({a.normalizeRealtimeFactor}× realtime)</li>
+          <li>
+            Processing: {a.processMethod ?? "normalize"} in {((a.normalizeMs ?? 0) / 1000).toFixed(1)}s ({a.normalizeRealtimeFactor}× realtime)
+            {a.fallbackReason && <span className="text-neutral-500"> · {a.fallbackReason}</span>}
+          </li>
+          {a.timingRepairs && a.timingRepairs.length > 0 && (
+            <li className="text-amber-700 dark:text-amber-400">
+              Repaired {a.timingRepairs.length} broken timestamp{a.timingRepairs.length === 1 ? "" : "s"} (e.g. {a.timingRepairs[0].track} at {Math.round(a.timingRepairs[0].atSec)}s)
+            </li>
+          )}
         </ul>
       )}
       {slices.length > 0 && (

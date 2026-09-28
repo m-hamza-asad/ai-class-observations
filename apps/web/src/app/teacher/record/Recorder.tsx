@@ -243,9 +243,9 @@ export default function Recorder({ classId, className }: { classId: string; clas
           <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950">
             <h2 className="mb-3 font-semibold">Before you start</h2>
             <ul className="space-y-2 text-sm">
-              <Check>Phone on the tripod, facing you, with the board in view.</Check>
+              <Check>Phone on the tripod, turned sideways (landscape), facing you, with the board in view.</Check>
               <Check>Phone plugged in to a charger.</Check>
-              <Check>Do Not Disturb on, so calls don&apos;t interrupt the recording.</Check>
+              <Check>Do Not Disturb on, and no alarms or timers set for the lesson. On iPhone, an alarm or timer pauses the camera and microphone.</Check>
               <Check strong>
                 Keep Wi-Fi or mobile data <u>on</u>. Do <u>not</u> use Airplane Mode. The lesson uploads while you teach, so it&apos;s ready soon after class. If the
                 connection drops, the video is saved on this phone and uploads automatically when it returns.

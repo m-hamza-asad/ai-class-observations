@@ -17,7 +17,7 @@ import type { FrameworkDefinition } from "@obs/shared";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 import { db } from "../lib/supabase.js";
-import { normalize, probe } from "../media/ffmpeg.js";
+import { prepareVideo } from "../media/prepare.js";
 import { cleanupIngest, dirOf, ingestStreamFile, type SliceCut } from "../recordings/ingest.js";
 import { isUnclear, segmentConfidence, transcribeSlice, TRANSCRIBE_PROMPT_VERSION } from "../ai/transcribe.js";
 import { needsRomanization, romanize, ROMANIZE_PROMPT_VERSION } from "../ai/romanize.js";
@@ -252,10 +252,10 @@ export async function handleNormalize(data: StageJob, retryCount: number, retryL
       if (error || !rec) throw new Error(`recording ${recordingId} not found`);
       const src = await ingestStreamFile(recordingId);
       const out = path.join(dirOf(recordingId), "lesson.mp4");
-      const r = await normalize(src, out);
-      if (r.code !== 0) throw new Error(`ffmpeg normalize failed: ${r.stderr.trim().slice(-1500)}`);
-      const p = await probe(out);
-      if (!p.ok || !p.durationSec) throw new Error(`normalized file is not valid: ${p.error ?? "no duration"}`);
+      // repair browser timing bugs, then remux (or transcode as a fallback); output is validated inside
+      const prepared = await prepareVideo(src, out);
+      const p = prepared.output;
+      if (!p.durationSec) throw new Error("processed video has no duration");
 
       const storagePath = `${rec.campus_id}/${recordingId}/lesson.mp4`;
       const size = (await stat(out)).size;
@@ -267,7 +267,19 @@ export async function handleNormalize(data: StageJob, retryCount: number, retryL
         .from("recordings")
         .update({ video_path: storagePath, duration_sec: Math.round(p.durationSec * 10) / 10, size_bytes: size, mime_type: "video/mp4" })
         .eq("id", recordingId);
-      logger.info({ stage: "normalization", recordingId, durationSec: p.durationSec, bytes: size, ffmpegMs: r.ms }, "video normalized and stored");
+      logger.info(
+        {
+          stage: "normalization",
+          recordingId,
+          method: prepared.method,
+          fallbackReason: prepared.fallbackReason,
+          timingRepairs: prepared.repairs,
+          durationSec: p.durationSec,
+          bytes: size,
+          ms: prepared.ms,
+        },
+        "video processed and stored",
+      );
     },
     (msg) => failRecording(recordingId, "normalization", msg),
   );

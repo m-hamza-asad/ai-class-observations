@@ -56,10 +56,12 @@ export interface ProbeSummary {
   durationSec?: number;
   sizeBytes?: number;
   bitRate?: number;
-  video?: { codec: string; width: number; height: number; fps?: string; rotation?: number };
-  audio?: { codec: string; sampleRate: number; channels: number };
+  video?: { codec: string; width: number; height: number; fps?: string; rotation?: number; durationSec?: number };
+  audio?: { codec: string; sampleRate: number; channels: number; durationSec?: number };
   error?: string;
 }
+
+const num = (x: unknown) => (Number.isFinite(Number(x)) && x !== undefined && x !== null ? Number(x) : undefined);
 
 export async function probe(file: string): Promise<ProbeSummary> {
   const r = await run(FFPROBE, ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", file], 120_000);
@@ -75,8 +77,8 @@ export async function probe(file: string): Promise<ProbeSummary> {
     durationSec: Number.isFinite(dur) ? dur : undefined,
     sizeBytes: Number(j.format?.size) || undefined,
     bitRate: Number(j.format?.bit_rate) || undefined,
-    video: v ? { codec: v.codec_name, width: v.width, height: v.height, fps: v.avg_frame_rate, rotation } : undefined,
-    audio: a ? { codec: a.codec_name, sampleRate: Number(a.sample_rate), channels: a.channels } : undefined,
+    video: v ? { codec: v.codec_name, width: v.width, height: v.height, fps: v.avg_frame_rate, rotation, durationSec: num(v.duration) } : undefined,
+    audio: a ? { codec: a.codec_name, sampleRate: Number(a.sample_rate), channels: a.channels, durationSec: num(a.duration) } : undefined,
   };
 }
 
@@ -98,6 +100,14 @@ export async function decodedDurationSec(file: string, stream: "a" | "v" = "a"):
  */
 export async function extractAudioSlice(input: string, output: string, fromSec: number): Promise<RunResult> {
   return run(FFMPEG, ["-v", "error", "-y", "-ss", String(fromSec), "-i", input, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "flac", output], 5 * 60_000);
+}
+
+/**
+ * Repackage without re-encoding (seconds, not minutes). Used when the phone already recorded H.264 + AAC,
+ * which both iOS Safari and Android Chrome do. faststart puts the index first so playback starts immediately.
+ */
+export async function remux(input: string, output: string): Promise<RunResult> {
+  return run(FFMPEG, ["-v", "error", "-y", "-i", input, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart", output]);
 }
 
 /**

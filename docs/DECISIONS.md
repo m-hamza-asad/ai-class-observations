@@ -54,3 +54,24 @@ upload → rolling transcription (60s slices with 2s overlap, Whisper large-v3, 
 2. Which score the thresholds apply to: framework %, alignment %, or a combination? [kept separate; no combined score]
 3. Category weights. [equal]
 4. Exact definitions of *flipped learning*, *closed-book introduction* and *focused grid*. [working descriptors, marked "to confirm"]
+
+## 2026-09-28: Phone test results and video processing change
+
+**Devices tested:** Android 10 (Chrome 153) and iPhone (iOS 18.7, Safari 18.7.5), in a browser tab and as an installed home-screen app. The 45-minute test is still outstanding.
+
+| Scenario | Android | iPhone |
+|---|---|---|
+| Normal recording | ✅ | ✅ |
+| Connection lost ~25–30s, restored | ✅ all parts uploaded after reconnect | ✅ same |
+| Control Centre / notification shade | ✅ no effect | ⚠️ video freezes while it's open (one 4s frame); audio continues |
+| Clock timer alert | ✅ no effect | ❌ camera and mic paused ~13s, and Safari wrote a corrupt timestamp (see below) |
+| Switch app / lock screen ~10s | ✅ recording continues (picture drops frames) | ❌ recording appears to end (no diagnostics captured) |
+| Installed home-screen app | ✅ | ✅ (storage persisted; ~40 GB quota) |
+
+Both platforms record **H.264 + AAC in fragmented MP4** at 720p. Android overshoots the requested 1 Mbps (~1.3–1.4 Mbps, ≈10 MB/min); iPhone honours it (~1.0 Mbps). The iPhone stores portrait as a rotation flag. Rolling audio slices worked in every test.
+
+**Decision: in-app live recording stays the primary path** (as you confirmed). Neither platform showed data loss from connectivity drops. The iPhone's weaknesses are specific, avoidable interruptions, which the teacher checklist now names: no alarms/timers, don't leave the app, phone sideways. The camera-app upload remains the fallback.
+
+**Safari timestamp bug.** After the timer interruption, Safari wrote a negative duration for one video frame. As an unsigned 32-bit value it wraps to 7,158,278 s, so the file claimed to be 83 days long and processing failed. `media/fmp4.ts` now repairs this in place before processing: it rebuilds the bad duration from the next fragment's start time, rewriting only the affected 4-byte fields.
+
+**Video processing: remux instead of re-encode.** On Railway's shared CPU, re-encoding ran at 0.23–0.45× real time: 10–20 minutes for a 45-minute lesson, enough on its own to miss the 10-minute target. Since phones already record H.264/AAC, `media/prepare.ts` now repairs → **remuxes** (stream copy + faststart), validates the output (plausible duration; audio and video agree), and only re-encodes as a fallback. Measured on Railway with the real broken iPhone file: repaired and remuxed in 0.3 s (0.005× real time). Tests cover the repair, an untouched-file no-op, and the validation rules.

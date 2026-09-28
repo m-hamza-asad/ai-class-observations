@@ -4,16 +4,18 @@
  *   - chunks arrive in order-agnostic PUTs, are appended to a growing "stream" file once contiguous
  *   - every ~60s of appended media we cut a Whisper-ready FLAC slice from the growing file
  *     (proves rolling transcription works on partial MediaRecorder output)
- *   - on finalize we probe, decode and normalize the full file and time each step
+ *   - on finalize we probe, decode and process the full file (repair + remux/transcode) and time each step
  */
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import os from "node:os";
 import { appendFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform, type Readable } from "node:stream";
-import { decodedDurationSec, extractAudioSlice, normalize, probe, type ProbeSummary } from "../media/ffmpeg.js";
+import { decodedDurationSec, extractAudioSlice, probe, type ProbeSummary } from "../media/ffmpeg.js";
+import type { TimingRepair } from "../media/fmp4.js";
+import { prepareVideo } from "../media/prepare.js";
 
 const DATA_DIR = path.resolve(process.env.DATA_DIR ?? "data", "lab");
 const MAX_UPLOAD_BYTES = Number(process.env.LAB_MAX_UPLOAD_BYTES ?? 4 * 1024 ** 3);
@@ -35,6 +37,9 @@ interface Analysis {
   finishedAt?: string;
   sourceProbe?: ProbeSummary;
   decodedAudioSec?: number;
+  processMethod?: "remux" | "transcode";
+  fallbackReason?: string;
+  timingRepairs?: TimingRepair[];
   normalizeMs?: number;
   normalizeRealtimeFactor?: number;
   normalizedProbe?: ProbeSummary;
@@ -163,13 +168,15 @@ async function analyze(id: string, log: FastifyInstance["log"]) {
     a.decodedAudioSec = await decodedDurationSec(src, "a");
     // container temp disk, not the (small) persistent volume
     const out = path.join(os.tmpdir(), `lab-${id}.mp4`);
-    const n = await normalize(src, out);
-    if (n.code !== 0) throw new Error(`normalize failed: ${n.stderr.trim().slice(-1500)}`);
-    a.normalizeMs = n.ms;
-    a.normalizedProbe = await probe(out);
+    // same processing as the production pipeline: timing repair, then remux (or transcode fallback)
+    const prepared = await prepareVideo(src, out);
     await rm(out, { force: true });
-    const dur = a.normalizedProbe.durationSec ?? a.decodedAudioSec;
-    if (dur) a.normalizeRealtimeFactor = Number((n.ms / 1000 / dur).toFixed(3));
+    a.processMethod = prepared.method;
+    a.fallbackReason = prepared.fallbackReason;
+    a.timingRepairs = prepared.repairs;
+    a.normalizeMs = prepared.ms;
+    a.normalizedProbe = prepared.output;
+    a.normalizeRealtimeFactor = prepared.realtimeFactor ?? undefined;
     a.status = "done";
     // keep disk small (Railway trial volumes are tiny): the normalized copy + audio slices are all we inspect later
     await rm(path.join(dirOf(id), "chunks"), { recursive: true, force: true });
@@ -348,6 +355,16 @@ export async function labRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/sessions/:id", async (req, reply) => {
     const m = await loadMeta(req.params.id);
     return m ?? reply.code(404).send({ error: "unknown session" });
+  });
+
+  // Raw upload for debugging sessions whose processing failed (successful ones are deleted after analysis).
+  app.get<{ Params: { id: string } }>("/sessions/:id/stream", async (req, reply) => {
+    const m = ID_RE.test(req.params.id) ? await loadMeta(req.params.id) : null;
+    const file = m ? streamPath(m) : null;
+    if (!m || !file || !(await stat(file).catch(() => null))) return reply.code(404).send({ error: "no raw file kept for this session" });
+    reply.header("content-type", "application/octet-stream");
+    reply.header("content-disposition", `attachment; filename="${m.id}.${m.ext}"`);
+    return reply.send(createReadStream(file));
   });
 
   app.get("/sessions", async () => {
