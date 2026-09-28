@@ -3,7 +3,9 @@ FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/worker/package.json apps/worker/
+COPY packages/shared/package.json packages/shared/
 RUN npm ci -w worker --include-workspace-root=false --ignore-scripts
+COPY packages/shared packages/shared
 COPY apps/worker apps/worker
 RUN npm run build -w worker
 
@@ -13,6 +15,7 @@ WORKDIR /app
 ENV NODE_ENV=production FFMPEG_PATH=/usr/bin/ffmpeg FFPROBE_PATH=/usr/bin/ffprobe DATA_DIR=/data
 COPY package.json package-lock.json ./
 COPY apps/worker/package.json apps/worker/
+COPY packages/shared/package.json packages/shared/
 RUN npm ci -w worker --include-workspace-root=false --omit=dev --ignore-scripts
 COPY --from=build /app/apps/worker/dist apps/worker/dist
 WORKDIR /app/apps/worker

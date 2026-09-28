@@ -23,7 +23,8 @@ Everything the POC needs, in the order you'll need it. Nothing here is required 
 2. You'll import this repo later, with **Root Directory = `apps/web`**. I can do the import with the Vercel CLI once you're logged in.
 3. Environment variables (Project → Settings → Environment Variables):
    - `NEXT_PUBLIC_WORKER_URL`: the Railway URL from step 2
-   - From Day 2: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`: **not** prefixed with `NEXT_PUBLIC_`, so it stays on the server. The admin screens need it to send invites.
 
 ## 2. Railway
 1. Sign up at https://railway.com and choose the Hobby plan.
@@ -38,9 +39,23 @@ Everything the POC needs, in the order you'll need it. Nothing here is required 
 3. Project Settings → API keys: copy
    - Project URL → `SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_URL`
    - `anon` / **publishable** key → `NEXT_PUBLIC_SUPABASE_ANON_KEY` (safe for the browser)
-   - `service_role` / **secret** key → `SUPABASE_SERVICE_ROLE_KEY` (**worker only, never in the frontend**)
+   - `service_role` / **secret** key → `SUPABASE_SERVICE_ROLE_KEY` (worker + Vercel server env; **never** in a `NEXT_PUBLIC_` variable)
 4. Click **Connect** (top bar) → **Session pooler** connection string → `DATABASE_URL` (worker job queue).
 5. Authentication → URL Configuration: set Site URL to the Vercel URL, and add `http://localhost:3000/**` to redirect URLs.
+6. Authentication → Sign In / Providers → **turn off "Allow new users to sign up"** (accounts are created only by admin invite).
+7. Authentication → Emails → Templates: paste `supabase/templates/invite.html` into **Invite user** and
+   `supabase/templates/magic_link.html` into **Magic Link**. (These links are verified server-side, so they work
+   even when the email is opened on a different device from the one that asked for it.)
+8. Apply the database schema from your machine:
+   ```bash
+   npx supabase login
+   npx supabase link --project-ref <your-project-ref>
+   npx supabase db push
+   ```
+9. Create the campus and the first admin (sends them an invite email):
+   ```bash
+   SUPABASE_URL=<project url> SUPABASE_SERVICE_ROLE_KEY=<secret key> npm run bootstrap-admin -- you@school.edu.pk "Your Name" "Campus Name"
+   ```
 
 ## 4. Email for magic links
 Supabase's built-in email sender only delivers to your own project team's addresses and is heavily
@@ -69,16 +84,28 @@ rate-limited, so teacher invites **will not arrive** without a custom SMTP sende
 |---|---|---|
 | `NEXT_PUBLIC_WORKER_URL` | ✓ | |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✓ | |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` | | ✓ |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✓ (server only) | ✓ |
+| `SUPABASE_URL`, `DATABASE_URL` | | ✓ |
 | `GROQ_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` | | ✓ |
 | `LAB_TOKEN`, `CORS_ORIGINS`, `DATA_DIR=/data` | | ✓ |
 
 All AI keys stay on the worker. The browser only ever holds the Supabase public key and the user's session.
 
 ## Local development
+Needs Docker Desktop running (for the local Supabase stack).
 ```bash
 npm install
-npm run dev:worker   # http://localhost:4000
-npm run dev:web      # http://localhost:3000
+npx supabase start          # local Postgres/Auth/Storage + Mailpit inbox at http://127.0.0.1:54324
+npm run dev:worker          # http://localhost:4000
+npm run dev:web             # http://localhost:3000
+npm run bootstrap-admin -- you@example.com "Your Name"   # then open the invite in Mailpit
 ```
-Copy `apps/worker/.env.example` → `apps/worker/.env` and `apps/web/.env.example` → `apps/web/.env.local`.
+Copy `apps/worker/.env.example` → `apps/worker/.env` and `apps/web/.env.example` → `apps/web/.env.local`, filling in
+the values printed by `npx supabase start`. Locally, no email really goes out: every invite and sign-in link lands in Mailpit.
+
+Checks:
+```bash
+npm run check-rls           # access-rule checks against local Supabase (creates and cleans up test users)
+npm test -w worker          # unit tests
+```
+After changing the schema, add a migration in `supabase/migrations/` and regenerate types with `npm run gen:types -w @obs/shared`.

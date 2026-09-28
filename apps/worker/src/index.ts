@@ -1,14 +1,17 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import { config, pipelineEnabled } from "./config.js";
+import { logger } from "./lib/logger.js";
 import { labRoutes } from "./lab/routes.js";
+import { documentRoutes } from "./routes/documents.js";
+import { startQueue, stopQueue } from "./queue.js";
 import { FFMPEG, FFPROBE } from "./media/ffmpeg.js";
 
-const port = Number(process.env.PORT ?? 4000);
-const corsOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+const corsOrigins = config.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean);
 
 const app = Fastify({
   // structured JSON logs; every pipeline log line carries recording/stage fields
-  logger: { level: process.env.LOG_LEVEL ?? "info" },
+  loggerInstance: logger,
   bodyLimit: 1024 * 1024,
 });
 
@@ -18,7 +21,24 @@ await app.register(cors, {
   methods: ["GET", "POST", "PUT", "OPTIONS"],
 });
 
-app.get("/health", async () => ({ ok: true, ffmpeg: FFMPEG, ffprobe: FFPROBE }));
+app.get("/health", async () => ({ ok: true, pipeline: pipelineEnabled, ffmpeg: FFMPEG, ffprobe: FFPROBE }));
 await app.register(labRoutes, { prefix: "/lab" });
 
-await app.listen({ port, host: "0.0.0.0" });
+if (pipelineEnabled) {
+  await startQueue();
+  await app.register(documentRoutes, { prefix: "/documents" });
+} else {
+  logger.warn("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / DATABASE_URL not set: running lab-only (no pipeline)");
+}
+
+// "::" listens on IPv6 and IPv4 (localhost may resolve to ::1; Railway private networking is IPv6)
+await app.listen({ port: config.PORT, host: "::" });
+
+for (const sig of ["SIGINT", "SIGTERM"] as const) {
+  process.once(sig, async () => {
+    logger.info({ signal: sig }, "shutting down");
+    await app.close();
+    await stopQueue();
+    process.exit(0);
+  });
+}

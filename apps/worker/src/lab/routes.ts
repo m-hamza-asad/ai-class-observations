@@ -16,7 +16,7 @@ import { decodedDurationSec, extractAudioSlice, normalize, probe, type ProbeSumm
 
 const DATA_DIR = path.resolve(process.env.DATA_DIR ?? "data", "lab");
 const MAX_UPLOAD_BYTES = Number(process.env.LAB_MAX_UPLOAD_BYTES ?? 4 * 1024 ** 3);
-const RETENTION_HOURS = Number(process.env.LAB_RETENTION_HOURS ?? 72);
+const RETENTION_HOURS = Number(process.env.LAB_RETENTION_HOURS ?? 24);
 const ID_RE = /^[A-Za-z0-9-]{8,64}$/;
 
 interface AudioSlice {
@@ -165,6 +165,9 @@ async function analyze(id: string, log: FastifyInstance["log"]) {
     const dur = a.normalizedProbe.durationSec ?? a.decodedAudioSec;
     if (dur) a.normalizeRealtimeFactor = Number((n.ms / 1000 / dur).toFixed(3));
     a.status = "done";
+    // keep disk small (Railway trial volumes are tiny): the normalized copy + audio slices are all we inspect later
+    await rm(path.join(dirOf(id), "chunks"), { recursive: true, force: true });
+    await rm(src, { force: true });
   } catch (err) {
     a.status = "failed";
     a.error = err instanceof Error ? err.message : String(err);

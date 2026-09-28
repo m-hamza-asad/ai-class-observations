@@ -16,6 +16,7 @@ docs/         decisions log, recording test protocol
 - Decisions and findings: [docs/DECISIONS.md](docs/DECISIONS.md)
 
 ## Status
-Day 1: the recording lab (`/lab/recorder`) plus worker lab endpoints are built and verified locally
-(MP4 and WebM, offline retry, rolling audio slices, normalization, Docker image). **Waiting on the
-real-device test** before building the production recorder.
+- **Day 1:** recording lab (`/lab/recorder`) and worker lab endpoints. Verified locally; **waiting on the real-device test**.
+- **Day 2:** Supabase schema + access rules, magic-link auth with admin/teacher roles, admin setup (people, classes,
+  documents with PDF/DOCX text extraction, terms), job queue with retries and failure reporting. Verified locally
+  end to end, including `npm run check-rls` (20 access checks).
